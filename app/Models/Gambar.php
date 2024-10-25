@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 class Gambar extends Model
 {
     use HasFactory;
+    protected $guarded = [];
     protected $table = 'gambar';
 
     protected $fillable = [

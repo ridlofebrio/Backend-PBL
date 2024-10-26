@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\CloudinaryStorage;
 use App\Models\Gambar;
 use App\Models\Post;
 
@@ -45,41 +46,91 @@ class PostController extends Controller
     }
     public function store(Request $request)
     {
-        //define validation rules
         $validator = Validator::make($request->all(), [
-            'image'     => 'required|image|mimes:jpeg,png,jpg,gif',
-            'user_id'     => 'required',
+            'image'   => 'required|image|mimes:jpeg,png,jpg',
+            'user_id' => 'required',
         ]);
 
-        //check if validation fails
+      
         if ($validator->fails()) {
-            return response()->json($validator->errors(), 422);
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal',
+                'errors'  => $validator->errors()
+            ], 422);
         }
 
-        //upload image
-        $image = $request->file('image');
-        $image->storeAs('public/posts', $image->hashName());
+        
+        $image  = $request->file('image');
+        $result = CloudinaryStorage::upload($image->getRealPath(), $image->getClientOriginalName());
 
-        //create post
-        $post = Gambar::create([
-            'gambarUrl'     => $image->hashName(),
+        
+        $gambar = Gambar::create([
+            'gambarUrl' => $result,
+            'user_id'   => $request->user_id,
+            'deskripsi' => $request->deskripsi,
         ]);
 
-        //return response
-        return new GambarResource(true, 'Data Post Berhasil Ditambahkan!', $post);
+        // Return response
+        return new GambarResource(true, 'Gambar berhasil ditambahkan!', $gambar);
     }
 
 
     public function update(Request $request, $id)
     {
-        $post = Gambar::findOrFail($id);
-        $post->update($request->all());
-        return new GambarResource(true, 'Post Updated', $post);
+        // Find the existing Gambar record
+        $gambar = Gambar::findOrFail($id);
+
+        // Define validation rules
+        $validator = Validator::make($request->all(), [
+            'image'     => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048', // max 2MB
+            'user_id'   => 'required|integer|exists:users,id',
+            'deskripsi' => 'nullable|string'
+        ]);
+
+        // Check if validation fails
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal',
+                'errors'  => $validator->errors()
+            ], 422);
+        }
+
+        // If new image is uploaded, delete old one and upload new
+        if ($request->hasFile('image')) {
+            // Delete old image from Cloudinary
+            CloudinaryStorage::delete($gambar->gambarUrl);
+
+            // Upload new image to Cloudinary
+            $image  = $request->file('image');
+            $result = CloudinaryStorage::upload($image->getRealPath(), $image->getClientOriginalName());
+
+            // Update gambarUrl with new image URL
+            $gambar->gambarUrl = $result;
+        }
+
+        // Update other fields
+        $gambar->user_id   = $request->user_id;
+        $gambar->deskripsi = $request->deskripsi;
+        $gambar->save();
+
+        // Return response
+        return new GambarResource(true, 'Gambar berhasil diperbarui!', $gambar);
     }
+
     public function destroy($id)
     {
-        $post = Gambar::findOrFail($id);
-        $post->delete();
-        return new GambarResource(true, 'Post Deleted', null);
+        // Find the existing Gambar record
+        $gambar = Gambar::findOrFail($id);
+
+        // Delete image from Cloudinary
+        CloudinaryStorage::delete($gambar->gambarUrl);
+
+        // Delete the record from the database
+        $gambar->delete();
+
+        // Return response
+        return response()->json(['success' => true, 'message' => 'Gambar berhasil dihapus']);
     }
 }
